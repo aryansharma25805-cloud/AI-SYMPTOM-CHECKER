@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>AI Symptom Checker (Voice Enabled)</title>
+  <style>
+    body { font-family: Arial, sans-serif; background: #f5f5f5; padding: 20px; }
+    #chat { max-height: 400px; overflow-y: auto; background: #fff; padding: 10px; border-radius: 8px; }
+    .msg { margin: 8px 0; padding: 8px; border-radius: 6px; }
+    .user { background: #d1f7d6; text-align: right; }
+    .system { background: #e8e8e8; text-align: left; }
+    button { margin: 10px; padding: 10px 15px; font-size: 16px; }
+    select { font-size: 16px; padding: 5px; }
+  </style>
+</head>
+<body>
+  <h2>🩺 AI Symptom Checker (Voice + Multilingual)</h2>
+  
+  <label for="lang">Select Language:</label>
+  <select id="lang">
+    <option value="en-IN">English</option>
+    <option value="hi-IN">Hindi</option>
+    <option value="pa-IN">Punjabi</option>
+  </select>
+  <br><br>
+
+  <button id="startBtn">🎤 Start Speaking</button>
+  <button id="stopBtn">🛑 Stop</button>
+
+  <div id="chat"></div>
+
+  <script>
+    const chatBox = document.getElementById("chat");
+    const startBtn = document.getElementById("startBtn");
+    const stopBtn = document.getElementById("stopBtn");
+    const langSelect = document.getElementById("lang");
+    
+    let recognition;
+    let finalTranscript = "";
+
+    function addMsg(text, who="system") {
+      const div = document.createElement("div");
+      div.className = "msg " + who;
+      div.textContent = text;
+      chatBox.appendChild(div);
+      chatBox.scrollTop = chatBox.scrollHeight;
+    }
+
+    function speak(text, lang) {
+      if ('speechSynthesis' in window) {
+        const u = new SpeechSynthesisUtterance(text);
+        u.lang = lang;
+        speechSynthesis.cancel();
+        speechSynthesis.speak(u);
+      }
+    }
+
+    function setupRecognition() {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SpeechRecognition) {
+        alert("Speech recognition not supported in this browser.");
+        return;
+      }
+      recognition = new SpeechRecognition();
+      recognition.lang = langSelect.value;
+      recognition.interimResults = true;
+      recognition.continuous = false;
+
+      recognition.onresult = (event) => {
+        let interim = '';
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          const transcript = event.results[i][0].transcript;
+          if (event.results[i].isFinal) {
+            finalTranscript += transcript;
+          } else {
+            interim += transcript;
+          }
+        }
+      };
+
+      recognition.onend = () => {
+        if (finalTranscript.trim()) {
+          addMsg("You: " + finalTranscript, "user");
+          sendToServer(finalTranscript, langSelect.value);
+        }
+      };
+    }
+
+    async function sendToServer(text, lang) {
+      addMsg("Analyzing your symptoms...", "system");
+
+      try {
+        const res = await fetch("http://localhost:3000/api/analyze", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text, lang })
+        });
+        const data = await res.json();
+        
+        let responseText = `Possible conditions: ${data.diagnoses.map(d => d.label).join(", ")}. Severity: ${data.severity}. Advice: ${data.advice}`;
+        addMsg(responseText, "system");
+        speak(responseText, lang);
+      } catch (err) {
+        addMsg("Error: " + err.message, "system");
+      }
+    }
+
+    startBtn.addEventListener("click", () => {
+      finalTranscript = "";
+      setupRecognition();
+      recognition.lang = langSelect.value;
+      recognition.start();
+    });
+
+    stopBtn.addEventListener("click", () => {
+      recognition.stop();
+    });
+  </script>
+</body>
+</html>
